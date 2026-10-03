@@ -1,0 +1,131 @@
+// Schema REGALFLIX
+// Modella l'intero flusso: proposta del privato -> risposta della struttura ->
+// emissione del buono -> attivazione/fruizione -> promemoria e scadenza.
+// Copre anche il ramo Corporate & Welfare (azienda, dipendenti, taglio unico).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProposalStatus {
+  PENDING    // in attesa di risposta della struttura
+  MODIFIED   // la struttura ha proposto una modifica, in attesa del privato
+  ACCEPTED   // confermata, buono emesso
+  DECLINED   // rifiutata dalla struttura
+  EXPIRED    // la struttura non ha risposto entro il termine
+}
+
+enum VoucherStatus {
+  ISSUED           // emesso, in attesa che il destinatario lo attivi
+  ACTIVATED        // il destinatario ha scelto data/note, in attesa della data
+  REDEEMED_OFFLINE // il destinatario ha dichiarato di aver già usufruito in struttura
+  EXPIRED          // scaduto senza essere stato usato
+}
+
+model Structure {
+  id        String     @id @default(cuid())
+  name      String
+  email     String
+  address   String?
+  category  String?    // es. "ristorazione", "cose-da-fare"
+  createdAt DateTime   @default(now())
+  proposals Proposal[]
+
+  @@index([email])
+}
+
+model Company {
+  id          String     @id @default(cuid())
+  name        String
+  vatNumber   String
+  email       String
+  logoUrl     String?
+  taglioUnico Float      // valore fisso del buono per l'intera campagna (regola Welfare)
+  createdAt   DateTime   @default(now())
+  employees   Employee[]
+  proposals   Proposal[]
+}
+
+model Employee {
+  id         String    @id @default(cuid())
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email      String
+  name       String?
+  proposalId String?   @unique
+  proposal   Proposal? @relation(fields: [proposalId], references: [id])
+  createdAt  DateTime  @default(now())
+}
+
+model Proposal {
+  id             String         @id @default(cuid())
+
+  // Contenuto della proposta
+  amount         Float          // valore indicativo scelto dal privato
+  finalAmount    Float?         // valore confermato/modificato dalla struttura
+  occasion       String?        // es. "Compleanno", "Anniversario", "Altro"
+  eventDate      DateTime?
+  description    String?
+  message        String?        // messaggio per il destinatario
+
+  // Mittente
+  senderName     String
+  senderEmail    String
+  senderToken    String         @unique // link privato per seguire lo stato
+
+  // Destinatario (se assente: e' un'emozione che il mittente regala a se stesso)
+  recipientEmail String?
+
+  // Struttura
+  structureId           String
+  structure             Structure @relation(fields: [structureId], references: [id])
+  structureToken        String    @unique // magic link, nessun login richiesto
+  structureTokenExpires DateTime  // SLA: 48 ore dall'invio
+
+  // Corporate (opzionale)
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+  employee  Employee?
+
+  status       ProposalStatus @default(PENDING)
+  structureNote String?       // motivazione di modifica o rifiuto
+
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  voucher Voucher?
+
+  @@index([structureToken])
+  @@index([senderToken])
+}
+
+model Voucher {
+  id             String        @id @default(cuid())
+  code           String        @unique // codice leggibile, es. RGX-7K2P9Q
+  recipientToken String        @unique // link di attivazione, univoco
+
+  proposal   Proposal @relation(fields: [proposalId], references: [id])
+  proposalId String   @unique
+
+  status      VoucherStatus @default(ISSUED)
+  issuedAt    DateTime      @default(now())
+  expiresAt   DateTime      // 12 mesi solari dall'emissione
+
+  activationDate DateTime? // data scelta dal destinatario
+  allergies      String?
+  notes          String?
+
+  feeAmount Float   // commissione REGALFLIX = 3% di finalAmount, nessun minimo
+  feePaid   Boolean @default(false)
+
+  lastReminderAt   DateTime?
+  remindersSent    Int       @default(0)
+
+  @@index([recipientToken])
+  @@index([code])
+}
