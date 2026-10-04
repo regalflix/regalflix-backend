@@ -13,7 +13,10 @@ const { runDailyJob } = require('./jobs/reminders');
 
 const app = express();
 
-app.use(helmet());
+// crossOriginResourcePolicy: di default Helmet blocca le richieste provenienti
+// da altri siti (utile per proteggere immagini/file statici, ma qui le API
+// DEVONO essere chiamabili dal sito REGALFLIX, che vive su un dominio diverso).
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(
   cors({
     origin: process.env.FRONTEND_ORIGIN || '*', // in produzione: metti l'URL esatto del sito
