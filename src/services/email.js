@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+ const nodemailer = require('nodemailer');
 
 // Trasporto SMTP generico: funziona con Postmark, SendGrid, Brevo, Amazon SES
 // o qualsiasi altro provider che esponga credenziali SMTP standard.
@@ -12,6 +12,11 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  // Timeout di sicurezza: se il provider email è lento o irraggiungibile,
+  // fallisce in pochi secondi invece di bloccare la richiesta per sempre.
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
 });
 
 const FROM = process.env.EMAIL_FROM || 'REGALFLIX <no-reply@regalflix.it>';
@@ -49,8 +54,6 @@ function wrapTemplate(title, bodyHtml, ctaLabel, ctaUrl) {
 
 async function sendMail({ to, subject, html }) {
   if (!process.env.SMTP_HOST) {
-    // In sviluppo, senza credenziali SMTP configurate, stampiamo l'email
-    // in console invece di fallire: comodo per testare il flusso in locale.
     console.log('--- EMAIL (SMTP non configurato, solo log) ---');
     console.log('A:', to, '\nOggetto:', subject);
     console.log(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
@@ -59,8 +62,6 @@ async function sendMail({ to, subject, html }) {
   }
   await transporter.sendMail({ from: FROM, to, subject, html });
 }
-
-// --- Template usati dal flusso -------------------------------------------
 
 async function sendStructureNotification(proposal) {
   const url = `${APP_URL}/struttura/${proposal.structureToken}`;
