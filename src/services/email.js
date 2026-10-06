@@ -1,28 +1,7 @@
- const nodemailer = require('nodemailer');
-
-// Trasporto SMTP generico: funziona con Postmark, SendGrid, Brevo, Amazon SES
-// o qualsiasi altro provider che esponga credenziali SMTP standard.
-// Basta compilare le variabili d'ambiente SMTP_* — non serve cambiare codice
-// per cambiare provider in futuro.
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: Number(process.env.SMTP_PORT) === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  // Timeout di sicurezza: se il provider email è lento o irraggiungibile,
-  // fallisce in pochi secondi invece di bloccare la richiesta per sempre.
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-});
-
-const FROM = process.env.EMAIL_FROM || 'REGALFLIX <no-reply@regalflix.it>';
+ const FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || 'no-reply@regalflix.it';
+const FROM_NAME = 'REGALFLIX';
 const APP_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
 
-// Dicitura legale da includere in ogni email, come da art. 2250 Codice Civile.
 const LEGAL_FOOTER = `
   <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e5dfc9;font-size:11.5px;color:#7a7666;line-height:1.6;">
     Raschetti Srls — REGALFLIX® / VANGARD®<br>
@@ -53,14 +32,30 @@ function wrapTemplate(title, bodyHtml, ctaLabel, ctaUrl) {
 }
 
 async function sendMail({ to, subject, html }) {
-  if (!process.env.SMTP_HOST) {
-    console.log('--- EMAIL (SMTP non configurato, solo log) ---');
+  if (!process.env.BREVO_API_KEY) {
+    console.log('--- EMAIL (BREVO_API_KEY non configurata, solo log) ---');
     console.log('A:', to, '\nOggetto:', subject);
-    console.log(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
     console.log('-----------------------------------------------');
     return;
   }
-  await transporter.sendMail({ from: FROM, to, subject, html });
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: FROM_NAME, email: FROM_EMAIL },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Brevo API error ${res.status}: ${errText}`);
+  }
 }
 
 async function sendStructureNotification(proposal) {
